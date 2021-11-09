@@ -20,7 +20,6 @@ import numpy as np
 import copy
 from datetime import datetime, timedelta
 from matplotlib import pyplot as plt
-from sklearn.externals.joblib.parallel import DEFAULT_MP_CONTEXT
 from statsmodels.regression.mixed_linear_model import MixedLM
 from sklearn import linear_model
 from sklearn.experimental import enable_iterative_imputer
@@ -155,12 +154,25 @@ def classifyMood(X, y, id, target, nominal_idx, fs, method, random_state=1008):
 
         # Perform upsampling to handle class imbalance
         print('Conducting upsampling with SMOTE.')
-        smote = SMOTENC(random_state=random_state,
-                        categorical_features=nominal_idx)
         cols = X_train.columns
-        X_train_upsampled, y_train_upsampled = smote.fit_resample(
-            X_train, y_train)
+
+        try:
+            smote = SMOTENC(random_state=random_state, categorical_features=nominal_idx)
+            X_train_upsampled, y_train_upsampled = smote.fit_resample(X_train, y_train)
+        except ValueError:       
+            # Set n_neighbors = n_samples
+            # Not great if we have a really small sample size. Hmm.
+            k_neighbors = (y_train == 1).sum() - 1
+            print('%d neighbors for SMOTE' % k_neighbors)
+            smote = SMOTENC(random_state=random_state, categorical_features=nominal_idx,
+                            k_neighbors=k_neighbors)
+            print(smote)
+            X_train_upsampled, y_train_upsampled = smote.fit_resample(X_train, y_train)
+
         X_train = pd.DataFrame(X_train_upsampled, columns=cols, dtype=float)
+
+        # Save the upsampled groups array
+        upsampled_groups = X_train[id]
 
         # Drop this column from the Xs - IMPORTANT!
         X_train.drop(columns=[id], inplace=True)
@@ -186,44 +198,37 @@ def classifyMood(X, y, id, target, nominal_idx, fs, method, random_state=1008):
         cols = X_test.columns
         X_test = pd.DataFrame(X_test_scaled, index=index, columns=cols)
 
-        print('Getting optimized classifier using gridsearch.')
-
+        # Do gridsearch
         if method == 'XGB':
-            n_estimators = [50, 100, 200, 500]
-            max_depth = [3, 6, 9]
-            min_child_weight = [1, 3, 6]
-            learning_rate = [0.05, 0.1, 0.3, 0.5]
-            param_grid = dict(n_estimators=n_estimators, max_depth=max_depth, min_child_weight=min_child_weight,
-                            learning_rate=learning_rate)
+            param_grid = {
+                'n_estimators': [50, 100, 200, 500],
+                'max_depth': [3, 6, 9],
+                'min_child_weight': [1, 3, 6],
+                'learning_rate': [0.05, 0.1, 0.3, 0.5]
+            }
             model = xgboost.XGBClassifier(random_state=random_state)
-            grid = GridSearchCV(estimator=model, param_grid=param_grid,
-                                cv=inner_cv, scoring='accuracy', n_jobs=4)
-            grid_result = grid.fit(X_train, y, groups=X_train[id])
-            best_params = grid_result.best_params_
-            model_final = xgboost.XGBClassifier(**best_params)
 
         elif method == 'RF':
-            n_estimators = [50, 100, 200, 500]
-            max_depth = [2, 5, 10]
-            max_features = [10, 12, 15]
-            param_grid = dict(n_estimators=n_estimators,
-                            max_depth=max_depth, max_features=max_features)
-            model = RandomForestClassifier(
-                oob_score=True, random_state=random_state)
-            grid = GridSearchCV(estimator=model, param_grid=param_grid,
-                                cv=5, scoring='accuracy', n_jobs=4)
-            grid_result = grid.fit(X, y)
-            best_params = grid_result.best_params_
-            model_final = RandomForestClassifier(**best_params)
-
-        print('Training and testing.')
-        model_final.fit(X_train, y_train)
-        pred = model_final.predict(X_test)
+            param_grid = {
+                'n_estimators': [50, 100, 200, 500],
+                'max_depth': [1, 2, 5, 10],
+                'max_features': [8, 10, 12],
+            }
+            model = RandomForestClassifier(oob_score=True, random_state=random_state)
+        
+        print('Getting optimized classifier using gridsearch.')
+        grid = GridSearchCV(estimator=model, param_grid=param_grid,
+                            cv=inner_cv, scoring='accuracy', n_jobs=2,
+                        )
+        clf = grid.fit(X_train.values, y_train.values, groups=upsampled_groups)
+        
+        print('Making predictions.')
+        pred = clf.predict(X_test.values)
         test_res_all.append(pd.DataFrame({'pred': pred, 'actual': y_test}))
 
         print('Calculating feature importance for this fold.')
         shap_values = calc_shap(X_train=X_train, X_test=X_test,
-                                model=model_final, method=method, random_state=random_state)
+                                model=clf.best_estimator_, method=method)
 
         shap_values_all.append(shap_values)
         test_indices_all.append(test_index)
@@ -234,13 +239,12 @@ def classifyMood(X, y, id, target, nominal_idx, fs, method, random_state=1008):
     all_res.update({'method': method, 'target': target, 'feature_set': fs, 
                     'n_observations': X.shape[0], 'n_feats': X.shape[1]})
 
-    pd.DataFrame([all_res]).to_csv('class_outcomes.csv', mode='a', index=False)
+    pd.DataFrame([all_res]).to_csv('results/pred_res.csv', mode='a', index=False)
 
 # ---------------------------------------------------------------------------
 
 # Read in the weekly feature vectors 
-wkly_df = pd.read_csv(
-    '/mnt/c/Users/anbag/code/breast_cancer/features/all_ind_wkly.csv')
+wkly_df = pd.read_csv('features/all_ind_wkly.csv')
 
 # Store the feature names
 featnames = list(wkly_df.columns)
@@ -310,16 +314,9 @@ app_overall_fs_cols = ['weekofstudy', 'frequency', 'daysofuse', 'duration', 'dur
 # App Features - Individual Apps
 app_ind_fs_cols = ['weekofstudy'] + \
     [col for col in all_feats.columns
-     if APPS.any() in col
-     and ENGAGEMENT_METRICS.any() in col
-     and not TIMES_OF_DAY.any() in col]
-
-# Individual App Features Stratified by Time Window
-# UPDATE: Too sparse
-# app_ind_tw_fs = ['intercept','weekofstudy'] + \
-#                 [col for col in all_feats.columns if APPS.any() in col
-#                 and ENGAGEMENT_METRICS.any() in col
-#                 and TIMES_OF_DAY.any() in col]
+     if any([app in col for app in APPS])
+     and any([metric in col for metric in ENGAGEMENT_METRICS])
+     and not any([tod in col for tod in TIMES_OF_DAY])]
 
 # Add one last feature - an indicator of which app was used most often
 df = all_feats[[i for i in app_ind_fs_cols if 'frequency' in i]].copy()
@@ -385,20 +382,23 @@ featuresets = {
 }
 
 for alpha in alpha_list:
-    print('alpha: {0}'.format(alpha))
-    for fs_name, fs_cols in featuresets.items():
-        if 'mua' in fs_name:
-            df = survey_app_mua_feats
-        else:
-            df = all_feats
+   print('alpha: {0}'.format(alpha))
+   for fs_name, fs_cols in featuresets.items():
+       if 'mua' in fs_name:
+           df = survey_app_mua_feats
+       else:
+           df = all_feats
 
-        for target in ['anx', 'dep']:
-            res = genMixedLM(df, target, ['intercept'] + fs_cols,
-                             'pid', fs_name, alpha=alpha)
-            lmm_res.append(res.copy())
+       for target in ['anx', 'dep']:
+           res = genMixedLM(df, target, ['intercept'] + fs_cols,
+                            'pid', fs_name, alpha=alpha)
+           lmm_res.append(res.copy())
 
 lmm_res = pd.concat(lmm_res, copy=True, ignore_index=True, sort=False)
-lmm_res.to_csv('lmm_res.csv', index=False)
+lmm_res.to_csv('results/lmm_res.csv', index=False)
+
+id_col = 'pid'
+target_cols = ['anx_cat', 'dep_cat']
 
 for fs_name, fs_cols in featuresets.items():
 
@@ -408,12 +408,13 @@ for fs_name, fs_cols in featuresets.items():
         # Handle special cases in which we want data only from the most used app
         df = survey_app_mua_feats
 
-    X = df[fs_cols].copy()
+    X = df[[id_col] + fs_cols].copy()
     
     ''' If this is a featureset with app features 
         Get a list of one-hot-encoded columns from the most_used_app feature.'''
     mua_onehots = [col for col in X.columns if 'most_used_app' in col]
     
+    print(X.columns)
     # Get categorical feature indices - will be used with SMOTENC later
     nominal_idx = sorted([X.columns.get_loc(c) for c in ['pid'] + mua_onehots])
 
@@ -425,5 +426,5 @@ for fs_name, fs_cols in featuresets.items():
 
     for target_name, target_col in targets.items():
         for method in ['RF', 'XGB']:
-            res = classifyMood(X=X, y=target_col, id='pid', target=target_name,
+            res = classifyMood(X=X, y=target_col, id=id_col, target=target_name,
                               nominal_idx = nominal_idx, fs=fs_name, method=method)
