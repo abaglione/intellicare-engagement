@@ -1,8 +1,8 @@
 import pathlib
 
 # global paths and variables
-APP_USERS_DIR = 'app_users_only'
-ALL_USERS_DIR = 'all_users'
+APP_USERS_DIR = 'app_users_only/'
+ALL_USERS_DIR = 'all_users/'
 
 DATA_CLEANED_DIR = pathlib.Path("data/cleaned")
 DATA_PROCESSED_DIR = pathlib.Path("data/processed")

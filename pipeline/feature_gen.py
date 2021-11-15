@@ -68,8 +68,6 @@ def add_scores(df):
 
     # df2.drop('app_launches', axis=1,inplace=True)
     
-    # Fill missing values with -1
-    df.replace(np.nan, -1, inplace=True)
     df.to_csv('features/app_all_epoch_ind_applevel.csv')
     
 # ------------------------------------
@@ -124,8 +122,6 @@ def weekly_epoch_breakdown(df, metric, merge_cols):
     df.rename(columns=lambda x: x.lower().replace(" ", ""), inplace=True)
     df.rename(columns=lambda x: x +'_' + metric if x not in merge_cols else x, inplace=True)
     
-    # Replace missing data
-    df.replace(np.nan,-1, inplace=True)
     return df
 
 # ------------------------------------
@@ -172,8 +168,6 @@ def calc_duration_noepoch(app_launch, groupbycols):
     for df_to_merge in to_merge:
         df = pd.merge(df, df_to_merge, on=list(df_to_merge.columns[:-1]), how="outer")
         
-#     df.replace(0.,-1, inplace=True)
-    df.replace(np.nan,0, inplace=True)
     return df
 
 def calc_duration_has_epoch(app_launch, groupbycols):
@@ -243,9 +237,6 @@ def calc_duration_has_epoch(app_launch, groupbycols):
         how="outer"
     )
     
-#     res.replace(0.,-1, inplace=True)
-    res.replace(np.nan,3600*24, inplace=True)
-    
     return res
 
 def construct_feature_vectors(app_launch, wklysurvey, timediv):
@@ -254,6 +245,7 @@ def construct_feature_vectors(app_launch, wklysurvey, timediv):
     
     # Get a list of apps over which to iterate
     apps = list(app_launch['package'].unique())
+    filepath = 'features/app_users_only/'
     
     if timediv == 'daily':
         # Let our daily individual aggregate features be our starting dataframe
@@ -264,13 +256,13 @@ def construct_feature_vectors(app_launch, wklysurvey, timediv):
         
         # Specify the files containing applevel features
         # NOTE: Had problem last time with "for each" with only one list entry...hmm
-        applevel_featurefiles = ['features/app_dly_ind_applevel.csv']
+        applevel_featurefiles = [filepath + 'app_dly_ind_applevel.csv']
         
     elif timediv == 'wkly':
         # Let our weekly individual aggregate features be our starting dataframe
-        vectors = pd.read_csv('features/wkly_agg.csv')
+        vectors = pd.read_csv(filepath + 'wkly_agg.csv')
         timediv_col = 'weekofstudy'
-        applevel_featurefiles = ['features/wkly_applevel.csv', 'features/wkly_epoch_applevel.csv']
+        applevel_featurefiles = [filepath + 'wkly_applevel.csv', filepath + 'wkly_epoch_applevel.csv']
         
     # for pid in list(vectors['pid'].unique()):
 #     for week in range(2, 8):
@@ -330,7 +322,6 @@ def construct_feature_vectors(app_launch, wklysurvey, timediv):
     df = wklysurvey[['pid', 'weekofstudy', 'cope_alcohol_tob', 'physical_pain', 'connected', 'receive_support', 'support_others', 'active', 'healthy_food']]
     
     vectors = pd.merge(vectors, df, on=['pid', 'weekofstudy'], how="left")
-    vectors.replace(np.nan,-1, inplace=True) 
     
     return vectors
         

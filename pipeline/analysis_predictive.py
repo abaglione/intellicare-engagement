@@ -21,9 +21,6 @@ import copy
 from datetime import datetime, timedelta
 from matplotlib import pyplot as plt
 from statsmodels.regression.mixed_linear_model import MixedLM
-from sklearn import linear_model
-from sklearn.experimental import enable_iterative_imputer
-from sklearn.impute import IterativeImputer
 from imblearn.over_sampling import SMOTENC
 import xgboost
 import shap
@@ -55,15 +52,6 @@ pd.set_option('display.max_columns', 50)
 #https://imbalanced-learn.readthedocs.io/en/stable/generated/imblearn.over_sampling.SMOTE.html
 
 # --------- Functions ------------
-
-def fillmissing(df, cols, val, fillval):
-    for c in cols:
-        df[c].loc[df[c] == val] = fillval
-
-def rename_mapper(colname):
-    new_colname = colname.replace('_'+all_feats['most_used_app'][i], '')
-    return(new_colname)
-
 def get_performance_metrics(df, actual='actual', pred='pred'):
     stats = {}
 
@@ -152,6 +140,8 @@ def classifyMood(X, y, id, target, nominal_idx, fs, method, random_state=1008):
         X_train, y_train = X.loc[train_index, :], y[train_index]
         X_test, y_test = X.loc[test_index, :], y[test_index]
 
+        # TODO: Move Imputation here!
+        
         # Perform upsampling to handle class imbalance
         print('Conducting upsampling with SMOTE.')
         cols = X_train.columns
@@ -240,191 +230,3 @@ def classifyMood(X, y, id, target, nominal_idx, fs, method, random_state=1008):
                     'n_observations': X.shape[0], 'n_feats': X.shape[1]})
 
     pd.DataFrame([all_res]).to_csv('results/pred_res.csv', mode='a', index=False)
-
-# ---------------------------------------------------------------------------
-
-# Read in the weekly feature vectors 
-wkly_df = pd.read_csv('features/all_ind_wkly.csv')
-
-# Store the feature names
-featnames = list(wkly_df.columns)
-
-#imputing missing survey data -- weekly data
-impfeats = ['cope_alcohol_tob', 'physical_pain', 'connected', 'receive_support', 'anx',
-            'dep', 'active', 'support_others', 'healthy_food']
-featnames_app = [i for i in featnames if i not in impfeats]
-feats_app = wkly_df.drop(axis=1, columns=impfeats)
-feats_napp = wkly_df[impfeats].copy()
-fillmissing(feats_napp, impfeats, -1, np.nan)
-
-imputer = IterativeImputer(max_iter=50, random_state=1008, add_indicator=True)
-imputer.fit(feats_napp)
-impfeats_ind = [i+'_ind' for i in impfeats]
-impfeats_c = copy.deepcopy(impfeats)
-impfeats_c.extend(impfeats_ind)
-feats_napp = pd.DataFrame(
-    np.round(imputer.transform(feats_napp)), columns=impfeats_c)
-all_feats = pd.concat([feats_app, feats_napp], copy=True, axis=1)
-
-frequency_feats = [n for n in featnames if 'frequency' in n]
-reg_feats = [n for n in featnames if 'daysofuse' in n]
-dur_feats = [n for n in featnames if 'duration' in n and 'betweenlaunch' not in n]
-lau_dur_feats = [n for n in featnames if 'betweenlaunch' in n]
-
-fillmissing(all_feats, frequency_feats, -1, 0)
-fillmissing(all_feats, reg_feats, -1, 0)
-fillmissing(all_feats, dur_feats, -1, 0)
-fillmissing(all_feats, lau_dur_feats, -1, 3600*24*7)
-
-#add the intercept columns for the linear mixed model
-all_feats['intercept'] = 1
-
-#outcomes transformation -- anx, dep
-#week to week change as outcome
-#change to baseline level as outcome
-#instead of difference, consider ratio between the weekly value and the baseline
-#global average being subtracted
-
-all_feats['anx'].hist()
-all_feats['dep'].hist()
-
-#add classification outcomes
-all_feats['dep_cat'] = np.where(all_feats['dep'] >= 4, 1, 0)
-all_feats['anx_cat'] = np.where(all_feats['anx'] >= 3, 1, 0)
-
-# ------ Feature Set Spec -----------
-
-APPS = ['aspire', 'boostme', 'dailyfeats', 'icope', 'mantra', 'messages',
-        'moveme', 'relax', 'slumbertime', 'thoughtchallenger', 'worryknot']
-ENGAGEMENT_METRICS = ['frequency', 'duration',
-                      'betweenlaunch_duration', 'days_of_use']
-TIMES_OF_DAY = ['morning', 'afternoon', 'evening', 'latenight']
-
-# Survey Features Only
-survey_fs_cols = ['cope_alcohol_tob', 'physical_pain', 'connected', 'receive_support', 'active',
-                  'support_others', 'healthy_food', 'cope_alcohol_tob_ind', 'physical_pain_ind',
-                  'connected_ind', 'receive_support_ind', 'active_ind', 'support_others_ind',
-                  'healthy_food_ind']
-
-# App Features - All Apps
-app_overall_fs_cols = ['weekofstudy', 'frequency', 'daysofuse', 'duration', 'duration_mean',
-                       'duration_std', 'duration_min', 'duration_max', 'betweenlaunch_duration_mean',
-                       'betweenlaunch_duration_std', 'num_apps_used']
-
-# App Features - Individual Apps
-app_ind_fs_cols = ['weekofstudy'] + \
-    [col for col in all_feats.columns
-     if any([app in col for app in APPS])
-     and any([metric in col for metric in ENGAGEMENT_METRICS])
-     and not any([tod in col for tod in TIMES_OF_DAY])]
-
-# Add one last feature - an indicator of which app was used most often
-df = all_feats[[i for i in app_ind_fs_cols if 'frequency' in i]].copy()
-all_feats['most_used_app'] = [i[1] for i in df.idxmax(axis=1).str.split('_')]
-
-#dummitize the most_used_app column
-mua_dummy_df = pd.get_dummies(all_feats['most_used_app'])
-mua_dummy_cols = list(mua_dummy_df.columns)
-all_feats = pd.concat([all_feats,mua_dummy_df],axis=1)
-
-# Create a subset with survey features + only features from the most used app
-mua_dfs = []
-for i in range(all_feats.shape[0]):
-    df = all_feats[[
-        e for e in app_ind_fs_cols if all_feats['most_used_app'][i] in e]].iloc[[i]].copy()
-    df.rename(mapper=rename_mapper, axis=1, inplace=True)
-    mua_dfs.append(df)
-
-app_mua_feats = pd.concat(mua_dfs, sort=False)
-survey_app_mua_feats = pd.concat(
-    [all_feats[['pid', 'weekofstudy', 'anx', 'dep','anx_cat', 'dep_cat', 'most_used_app']],
-     all_feats[survey_fs_cols],
-     app_mua_feats], 
-    axis=1, copy=True
-)
-
-# Create last featureset
-# App Features - Only Features from the Most Used App for a Given Observation (Row)
-app_mua_fs_cols = ['weekofstudy', 'frequency', 'daysofuse', 
-                   'duration', 'duration_mean', 'duration_std',
-                   'duration_min', 'duration_max', 'betweenlaunch_duration_mean', 
-                   'betweenlaunch_duration_std'] + mua_dummy_cols
-
-# Add new dummy columns to other featuresets
-app_overall_fs_cols += mua_dummy_cols
-app_ind_fs_cols += mua_dummy_cols
-
-
-######regression tasks on 1-5 scale (cut off on both 1 (floor) and 5 (ceiling)) using lasso linear mixed effect model;
-m1_anx = MixedLM(all_feats['anx'].astype(float), all_feats[app_overall_fs_cols].astype(
-    float), all_feats['pid'], all_feats['intercept'])
-r1_anx = m1_anx.fit_regularized(method='l1', alpha=0.2)
-r1_anx.params
-
-pred_df = pd.DataFrame(r1_anx.predict(
-    all_feats[app_overall_fs_cols].astype(float)), columns=['pred_anx'])
-pred_df['anx'] = all_feats['anx']
-pred_df['diff'] = pred_df['pred_anx'] - pred_df['anx']
-rmse = np.sqrt(np.sum(pred_df['diff']**2)/pred_df.shape[0])
-
-alpha_list = np.arange(0.1, 0.81, 0.1)
-
-lmm_res = []
-
-featuresets = {
-    'survey_fs': survey_fs_cols,
-    'app_overall_fs': app_overall_fs_cols,
-    'app_ind_fs': app_ind_fs_cols,
-    'app_mua_fs': app_mua_fs_cols,
-    'survey_app_overall_fs': survey_fs_cols+app_overall_fs_cols, 
-    'survey_app_ind_fs': survey_fs_cols+app_ind_fs_cols,
-    'survey_app_mua_fs': survey_fs_cols+app_mua_fs_cols
-}
-
-for alpha in alpha_list:
-   print('alpha: {0}'.format(alpha))
-   for fs_name, fs_cols in featuresets.items():
-       if 'mua' in fs_name:
-           df = survey_app_mua_feats
-       else:
-           df = all_feats
-
-       for target in ['anx', 'dep']:
-           res = genMixedLM(df, target, ['intercept'] + fs_cols,
-                            'pid', fs_name, alpha=alpha)
-           lmm_res.append(res.copy())
-
-lmm_res = pd.concat(lmm_res, copy=True, ignore_index=True, sort=False)
-lmm_res.to_csv('results/lmm_res.csv', index=False)
-
-id_col = 'pid'
-target_cols = ['anx_cat', 'dep_cat']
-
-for fs_name, fs_cols in featuresets.items():
-
-    if 'mua' not in fs_name:
-        df = all_feats
-    else:
-        # Handle special cases in which we want data only from the most used app
-        df = survey_app_mua_feats
-
-    X = df[[id_col] + fs_cols].copy()
-    
-    ''' If this is a featureset with app features 
-        Get a list of one-hot-encoded columns from the most_used_app feature.'''
-    mua_onehots = [col for col in X.columns if 'most_used_app' in col]
-    
-    print(X.columns)
-    # Get categorical feature indices - will be used with SMOTENC later
-    nominal_idx = sorted([X.columns.get_loc(c) for c in ['pid'] + mua_onehots])
-
-    # y
-    targets = {
-        'anxiety': df['anx_cat'].copy(),
-        'depression': df['dep_cat'].copy()
-    }
-
-    for target_name, target_col in targets.items():
-        for method in ['RF', 'XGB']:
-            res = classifyMood(X=X, y=target_col, id=id_col, target=target_name,
-                              nominal_idx = nominal_idx, fs=fs_name, method=method)
