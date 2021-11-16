@@ -93,7 +93,7 @@ def reset_index(df):
     return pd.merge(index_df, df, left_index=True, right_index=True)
 
 # --------- LEGACY FUNCTION --------- 
-def weekly_epoch_breakdown(df, metric, merge_cols):
+def weekly_epoch_breakdown(df, metric, id_time_mood_cols):
     
     """
     Create long-form (?) version of weekly feature vectors
@@ -102,7 +102,7 @@ def weekly_epoch_breakdown(df, metric, merge_cols):
     Args:
         df (DataFrame): A pandas DataFrame object
         metric (str): The name of the metric (e.g. 'duration' or 'frequency')
-        merge_cols ([str]): A list of common columns used for merging in future operations
+        id_time_mood_cols ([str]): A list of common columns used for merging in future operations
             (e.g. the participant id column, or the week of study column); 
             these should never be renamed!
     Returns:
@@ -115,12 +115,12 @@ def weekly_epoch_breakdown(df, metric, merge_cols):
     df = reset_index(df)
    
      # Custom reordering of epochs to be consistent with times of the day
-    df = df[merge_cols + EPOCHS['labels'][1:] + [EPOCHS['labels'][0]]]
+    df = df[id_time_mood_cols + EPOCHS['labels'][1:] + [EPOCHS['labels'][0]]]
     
     # Append metric label to each epoch column 
     #  (e.g. "morning_frequency")
     df.rename(columns=lambda x: x.lower().replace(" ", ""), inplace=True)
-    df.rename(columns=lambda x: x +'_' + metric if x not in merge_cols else x, inplace=True)
+    df.rename(columns=lambda x: x +'_' + metric if x not in id_time_mood_cols else x, inplace=True)
     
     return df
 
@@ -172,45 +172,45 @@ def calc_duration_noepoch(app_launch, groupbycols):
 
 def calc_duration_has_epoch(app_launch, groupbycols):
     
-    merge_cols = groupbycols[:-1]
+    id_time_mood_cols = groupbycols[:-1]
  
     df = app_launch.groupby(groupbycols)['duration'].sum()
-    res = weekly_epoch_breakdown(df, 'duration', merge_cols)
+    res = weekly_epoch_breakdown(df, 'duration', id_time_mood_cols)
 
     df = app_launch.groupby(groupbycols)['duration'].mean()
-    df = weekly_epoch_breakdown(df, 'duration_mean', merge_cols)
+    df = weekly_epoch_breakdown(df, 'duration_mean', id_time_mood_cols)
 
     res = pd.merge(
         res, 
         df, 
-        on = merge_cols,
+        on = id_time_mood_cols,
         how="outer"
     )
 
     df = app_launch.groupby(groupbycols)['duration'].std()
-    df = weekly_epoch_breakdown(df, 'duration_std', merge_cols)
+    df = weekly_epoch_breakdown(df, 'duration_std', id_time_mood_cols)
     res = pd.merge(
         res, 
         df, 
-        on = merge_cols,
+        on = id_time_mood_cols,
         how="outer"
     )
 
     df = app_launch.groupby(groupbycols)['duration'].min()
-    df = weekly_epoch_breakdown(df, 'duration_min', merge_cols)
+    df = weekly_epoch_breakdown(df, 'duration_min', id_time_mood_cols)
     res = pd.merge(
         res, 
         df, 
-        on = merge_cols,
+        on = id_time_mood_cols,
         how="outer"
     )
 
     df = app_launch.groupby(groupbycols)['duration'].max()
-    df = weekly_epoch_breakdown(df, 'duration_max', merge_cols)
+    df = weekly_epoch_breakdown(df, 'duration_max', id_time_mood_cols)
     res = pd.merge(
         res, 
         df, 
-        on = merge_cols,
+        on = id_time_mood_cols,
         how="outer"
     )
     
@@ -218,22 +218,22 @@ def calc_duration_has_epoch(app_launch, groupbycols):
             lambda x: x.diff().mean().total_seconds()
     )
     df = df.round(0)
-    df = weekly_epoch_breakdown(df, 'betweenlaunch_duration_mean', merge_cols) 
+    df = weekly_epoch_breakdown(df, 'betweenlaunch_duration_mean', id_time_mood_cols) 
     res = pd.merge(
         res, 
         df, 
-        on = merge_cols,
+        on = id_time_mood_cols,
         how="outer"
     )
 
     df = app_launch.sort_values('date').groupby(groupbycols)['date'].apply(
             lambda x: x.diff().std().total_seconds()
     )
-    df = weekly_epoch_breakdown(df, 'betweenlaunch_duration_std', merge_cols)   
+    df = weekly_epoch_breakdown(df, 'betweenlaunch_duration_std', id_time_mood_cols)   
     res = pd.merge(
         res, 
         df, 
-        on = merge_cols,
+        on = id_time_mood_cols,
         how="outer"
     )
     
@@ -242,6 +242,7 @@ def calc_duration_has_epoch(app_launch, groupbycols):
 def construct_feature_vectors(app_launch, wklysurvey, timediv):
     vectors = None
     timediv_col = None
+    mood_cols = ['anx', 'dep', 'trait_anx_group', 'trait_dep_group']
     
     # Get a list of apps over which to iterate
     apps = list(app_launch['package'].unique())
@@ -263,6 +264,9 @@ def construct_feature_vectors(app_launch, wklysurvey, timediv):
         vectors = pd.read_csv(filepath + 'wkly_agg.csv')
         timediv_col = 'weekofstudy'
         applevel_featurefiles = [filepath + 'wkly_applevel.csv', filepath + 'wkly_epoch_applevel.csv']
+    
+    id_time_cols = ['pid', timediv_col]
+    id_time_mood_cols = id_time_cols + mood_cols
         
     # for pid in list(vectors['pid'].unique()):
 #     for week in range(2, 8):
@@ -271,17 +275,16 @@ def construct_feature_vectors(app_launch, wklysurvey, timediv):
 
     # Implement a sorting scheme, to more easily visualize participants' progression
     #   through the study
-    vectors = vectors.sort_values(by=['pid', timediv_col])
+    vectors = vectors.sort_values(by=id_time_cols)
     vectors.drop(columns=['Unnamed: 0'], inplace=True)
     
     # Obtain the day and week each app launch occured
     df = app_launch[['pid', 'dayofstudy','weekofstudy']]
-
-    # epochO: Fix this merge - introduces duplicates :( which need to be manually removed in Excel
-    vectors = pd.merge(vectors, df, on=['pid', timediv_col], how="left")
+    vectors = pd.merge(vectors, df, on=id_time_cols, how="left")
     
     # Remove any entries that fall outside the study window
     vectors = vectors[vectors['dayofstudy'] > 0]
+    print(vectors.columns)
     
     # Create new column for each measure, for each app
     # For instance, we want to add a column for the "Worryknot" app's total frequency of use
@@ -295,33 +298,34 @@ def construct_feature_vectors(app_launch, wklysurvey, timediv):
 
         for app in apps:
             filtered = df[df['package'] == app].drop(columns=['package'])
-            metric_cols = [col for col in filtered.columns if col not in ['pid', timediv_col]]
+            metric_cols = [col for col in filtered.columns if col not in id_time_mood_cols]
             for col in metric_cols:
                 filtered.rename(index=str, columns={col: col + '_' +  app}, inplace=True)
             to_merge.append(filtered)
 
     for df_to_merge in to_merge:
-        vectors = pd.merge(vectors, df_to_merge, on=['pid', timediv_col], how="left")
+        vectors = pd.merge(vectors, df_to_merge, on=id_time_mood_cols, how="left")
        
     # Calculate total number of apps used during time division (e.g., per week), per user
-    df = app_launch.groupby(['pid', timediv_col])['package'].nunique().reset_index(name='num_apps_used')
-    vectors = pd.merge(vectors, df, on=['pid', timediv_col], how="left")
+    df = app_launch.groupby(id_time_cols)['package'].nunique().reset_index(name='num_apps_used')
+    vectors = pd.merge(vectors, df, on=id_time_cols, how="left")
 
     # Find the name(s) of the most used app(s) each day, per user
-    df = app_launch.groupby(['pid', timediv_col])['package'].agg(pd.Series.mode).reset_index(name='most_used_app')
+    df = app_launch.groupby(id_time_cols)['package'].agg(pd.Series.mode).reset_index(name='most_used_app')
 
     # Create one column per most-used app (descending order)
     df = pd.concat([df, df['most_used_app'].apply(pd.Series).add_prefix('most_used_app_')], axis = 1)
     
     # No longer need the column we started with
     df.drop(columns=['most_used_app'], inplace=True)
-    vectors = pd.merge(vectors, df, on=['pid', timediv_col], how="left")
+    vectors = pd.merge(vectors, df, on=id_time_cols, how="left")
+    print(vectors.columns)
     
     # Finally, let's add survey features
     # For daily features, daily survey features such as mood scores will be associated with the single weekly feature
     df = wklysurvey[['pid', 'weekofstudy', 'cope_alcohol_tob', 'physical_pain', 'connected', 'receive_support', 'support_others', 'active', 'healthy_food']]
     
-    vectors = pd.merge(vectors, df, on=['pid', 'weekofstudy'], how="left")
+    vectors = pd.merge(vectors, df, on=id_time_cols, how="left")
     
     return vectors
         

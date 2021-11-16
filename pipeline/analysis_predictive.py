@@ -29,6 +29,8 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer
 
 # --------- Display Options ------------
 small_size = 8
@@ -104,6 +106,19 @@ def gather_shap(X, method, shap_values, test_indices):
     return X_test, shap_values_all
 
 def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5):
+    # Do imputation      
+    # TODO - fix. Columns with all NaNs are dropped with fit_transform.
+    imputer = IterativeImputer(max_iter=50, random_state=1008, add_indicator=True)
+    df_imp = imputer.fit_transform(df)
+    index = df.index
+    print(index)
+    cols = df.columns
+    print(df_imp)
+    df = pd.DataFrame(df_imp, index=index, columns = cols)
+    
+    #add the intercept columns for the linear mixed model
+    df['intercept'] = 1
+
     mixedmodel = MixedLM(endog=df[outvar].astype(float), exog=df[expfeats].astype(
         float), groups=df[gpvar], exog_re=df['intercept'])
     modelres = mixedmodel.fit_regularized(method='l1', alpha=alpha)
@@ -140,7 +155,19 @@ def classifyMood(X, y, id, target, nominal_idx, fs, method, random_state=1008):
         X_train, y_train = X.loc[train_index, :], y[train_index]
         X_test, y_test = X.loc[test_index, :], y[test_index]
 
-        # TODO: Move Imputation here!
+        print('Imputing missing data.')
+        imputer = IterativeImputer(max_iter=50, random_state=1008, add_indicator=True)
+        # Create combined dataframes for imputation only
+        df_train = pd.concat(X_train, y_train, axis=1)
+        df_test = pd.concat(X_test, y_test, axis=1)
+
+        # Do imputation                
+        df_train = imputer.fit_transform(df_train)
+        df_test = imputer.fit_transform(df_test)
+
+        # Split back into X and y
+        X_train, y_train = df_train[df_train.columns[:-1]], df_train[df_train.columns[-1]]
+        X_test, y_test = df_train[df_test.columns[:-1]], df_train[df_test.columns[-1]]
         
         # Perform upsampling to handle class imbalance
         print('Conducting upsampling with SMOTE.')
