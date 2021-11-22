@@ -278,13 +278,12 @@ def construct_feature_vectors(app_launch, wklysurvey, timediv):
     vectors = vectors.sort_values(by=id_time_cols)
     vectors.drop(columns=['Unnamed: 0'], inplace=True)
     
-    # Obtain the day and week each app launch occured
-    df = app_launch[['pid', 'dayofstudy','weekofstudy']]
+    # Obtain the day or week each app launch occured
+    df = app_launch[id_time_cols]
     vectors = pd.merge(vectors, df, on=id_time_cols, how="left")
     
     # Remove any entries that fall outside the study window
-    vectors = vectors[vectors['dayofstudy'] > 0]
-    print(vectors.columns)
+    vectors = vectors[vectors[timediv_col] > 0]
     
     # Create new column for each measure, for each app
     # For instance, we want to add a column for the "Worryknot" app's total frequency of use
@@ -310,22 +309,31 @@ def construct_feature_vectors(app_launch, wklysurvey, timediv):
     df = app_launch.groupby(id_time_cols)['package'].nunique().reset_index(name='num_apps_used')
     vectors = pd.merge(vectors, df, on=id_time_cols, how="left")
 
-    # Find the name(s) of the most used app(s) each day, per user
+    ''' Find the name(s) of the most used app(s) each day, per user
+    Thanks @mykola-zotko: 
+    https://stackoverflow.com/questions/45312377/how-to-one-hot-encode-from-a-pandas-column-containing-a-list '''
     df = app_launch.groupby(id_time_cols)['package'].agg(pd.Series.mode).reset_index(name='most_used_app')
-
-    # Create one column per most-used app (descending order)
-    df = pd.concat([df, df['most_used_app'].apply(pd.Series).add_prefix('most_used_app_')], axis = 1)
+    s = df['most_used_app'].explode()
+    df = df.join(pd.crosstab(s.index, s))
     
-    # No longer need the column we started with
+    # Eliminate the column we no longer need
     df.drop(columns=['most_used_app'], inplace=True)
+    
+    ''' Add a prefix indicating these are for the most used app(s)
+    Thanks @a-kot and @peter-chen: 
+    https://stackoverflow.com/questions/39772896/add-prefix-to-specific-columns-of-dataframe'''
+    new_names = [(col,'most_used_app_' + col) for col in df.columns if col not in id_time_cols] 
+    df.rename(columns=dict(new_names), inplace=True)
     vectors = pd.merge(vectors, df, on=id_time_cols, how="left")
-    print(vectors.columns)
     
     # Finally, let's add survey features
     # For daily features, daily survey features such as mood scores will be associated with the single weekly feature
     df = wklysurvey[['pid', 'weekofstudy', 'cope_alcohol_tob', 'physical_pain', 'connected', 'receive_support', 'support_others', 'active', 'healthy_food']]
     
     vectors = pd.merge(vectors, df, on=id_time_cols, how="left")
+    
+    # Help pandas since it doesn't process datetimes well and introduces duplicate entries on merges
+    vectors = vectors.drop_duplicates(subset=id_time_cols)
     
     return vectors
         

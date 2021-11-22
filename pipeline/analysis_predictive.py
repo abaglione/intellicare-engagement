@@ -107,14 +107,11 @@ def gather_shap(X, method, shap_values, test_indices):
 
 def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5):
     # Do imputation      
-    # TODO - fix. Columns with all NaNs are dropped with fit_transform.
-    imputer = IterativeImputer(max_iter=50, random_state=1008, add_indicator=True)
+    imputer = IterativeImputer(max_iter=50, random_state=1008)
     df_imp = imputer.fit_transform(df)
     index = df.index
-    print(index)
     cols = df.columns
-    print(df_imp)
-    df = pd.DataFrame(df_imp, index=index, columns = cols)
+    df = pd.DataFrame(np.round(df_imp), index=index, columns = cols)
     
     #add the intercept columns for the linear mixed model
     df['intercept'] = 1
