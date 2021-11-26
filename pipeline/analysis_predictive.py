@@ -106,6 +106,10 @@ def gather_shap(X, method, shap_values, test_indices):
     return X_test, shap_values_all
 
 def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5):
+    
+    # Drop rows where target is NaN - should never impute these!
+    df.dropna(subset=[outvar], how='any', inplace=True)
+
     # Do imputation      
     imputer = IterativeImputer(max_iter=50, random_state=1008)
     df_imp = imputer.fit_transform(df)
