@@ -32,6 +32,8 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 
+from . import transform
+
 # --------- Display Options ------------
 small_size = 8
 medium_size = 14
@@ -110,7 +112,8 @@ def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5):
     # Drop rows where target is NaN - should never impute these!
     df.dropna(subset=[outvar], how='any', inplace=True)
 
-    # Do imputation      
+    # Do imputation  
+    print('Imputing missing vars')
     imputer = IterativeImputer(max_iter=50, random_state=1008)
     df_imp = imputer.fit_transform(df)
     index = df.index
@@ -120,9 +123,10 @@ def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5):
     #add the intercept columns for the linear mixed model
     df['intercept'] = 1
 
+    print('Fitting Mixed Linear Model.')
     mixedmodel = MixedLM(endog=df[outvar].astype(float), exog=df[expfeats].astype(
         float), groups=df[gpvar], exog_re=df['intercept'])
-    modelres = mixedmodel.fit_regularized(method='l1', alpha=alpha)
+    modelres = mixedmodel.fit_regularized(method='l1', alpha=alpha, disp=1)
     rdf = pd.DataFrame({'expvar': modelres.params.index, 'coef': modelres.params,
                         'tvalue': modelres.tvalues, 'pvalues': modelres.pvalues}).reset_index()
     rdf.drop(columns=['index'], inplace=True)
@@ -130,6 +134,7 @@ def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5):
     rdf['alpha'] = alpha
     rdf['outvar'] = outvar
 
+    print('Making predictions.')
     pred_df = pd.DataFrame(modelres.predict(
         df[expfeats].astype(float)), columns=['pred_'+outvar])
     pred_df[outvar] = df[outvar]
@@ -139,82 +144,37 @@ def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5):
 
     return(rdf)
 
-def classifyMood(X, y, id, target, nominal_idx, fs, method, random_state=1008):
+def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=1008):
     # Set up outer CV
-    outer_cv = StratifiedGroupKFold(n_splits=5, shuffle=True,
-                                    random_state=random_state)
-
-    inner_cv = StratifiedGroupKFold(n_splits=5, shuffle=True,
-                                    random_state=random_state)
-
+    outer_cv = StratifiedGroupKFold(n_splits=4, shuffle=True, random_state=random_state)
+    inner_cv = StratifiedGroupKFold(n_splits=4, shuffle=True, random_state=random_state+1)
+    
     test_res_all = []
     shap_values_all = list() 
     test_indices_all = list()
-
+    
+    
     # Do prediction task
-    for train_index, test_index in outer_cv.split(X=X, y=y, groups=X[id]):
+    for train_index, test_index in outer_cv.split(X=X, y=y, groups=X[id_col]):
         X_train, y_train = X.loc[train_index, :], y[train_index]
         X_test, y_test = X.loc[test_index, :], y[test_index]
 
-        print('Imputing missing data.')
-        imputer = IterativeImputer(max_iter=50, random_state=1008, add_indicator=True)
-        # Create combined dataframes for imputation only
-        df_train = pd.concat(X_train, y_train, axis=1)
-        df_test = pd.concat(X_test, y_test, axis=1)
-
-        # Do imputation                
-        df_train = imputer.fit_transform(df_train)
-        df_test = imputer.fit_transform(df_test)
-
-        # Split back into X and y
-        X_train, y_train = df_train[df_train.columns[:-1]], df_train[df_train.columns[-1]]
-        X_test, y_test = df_train[df_test.columns[:-1]], df_train[df_test.columns[-1]]
+        # Do imputation
+        imputer = IterativeImputer(random_state=5)
+        X_train = transform.impute(X_train, id_col, imputer)
+        X_test = transform.impute(X_test, id_col, imputer)
         
         # Perform upsampling to handle class imbalance
-        print('Conducting upsampling with SMOTE.')
-        cols = X_train.columns
-
-        try:
-            smote = SMOTENC(random_state=random_state, categorical_features=nominal_idx)
-            X_train_upsampled, y_train_upsampled = smote.fit_resample(X_train, y_train)
-        except ValueError:       
-            # Set n_neighbors = n_samples
-            # Not great if we have a really small sample size. Hmm.
-            k_neighbors = (y_train == 1).sum() - 1
-            print('%d neighbors for SMOTE' % k_neighbors)
-            smote = SMOTENC(random_state=random_state, categorical_features=nominal_idx,
-                            k_neighbors=k_neighbors)
-            print(smote)
-            X_train_upsampled, y_train_upsampled = smote.fit_resample(X_train, y_train)
-
-        X_train = pd.DataFrame(X_train_upsampled, columns=cols, dtype=float)
-
-        # Save the upsampled groups array
-        upsampled_groups = X_train[id]
-
-        # Drop this column from the Xs - IMPORTANT!
-        X_train.drop(columns=[id], inplace=True)
-        X_test.drop(columns=[id], inplace=True)
+        smote = SMOTENC(random_state=random_state, categorical_features=nominal_idx)
+        X_train, y_train, upsampled_groups = transform.upsample(X_train, y_train, id_col, smote)
+        
+        # Drop the id column from the Xs - IMPORTANT!
+        X_train.drop(columns=[id_col], inplace=True)
+        X_test.drop(columns=[id_col], inplace=True)
 
         # Format y
-        y_train = pd.Series(y_train_upsampled)
-
-        ''' Perform Scaling
-            Thank you for your guidance, @Miriam Farber
-            https://stackoverflow.com/questions/45188319/sklearn-standardscaler-can-effect-test-matrix-result
-        '''
-        print('Performing MinMax scaling.')
-        scaler = MinMaxScaler(feature_range=(0, 1))
-
-        X_train_scaled = scaler.fit_transform(X_train)
-        index = X_train.index
-        cols = X_train.columns
-        X_train = pd.DataFrame(X_train_scaled, index=index, columns=cols)
-
-        X_test_scaled = scaler.fit_transform(X_test)
-        index = X_test.index
-        cols = X_test.columns
-        X_test = pd.DataFrame(X_test_scaled, index=index, columns=cols)
+        y_train = pd.Series(y_train)
+        y_test = pd.Series(y_test)
 
         # Do gridsearch
         if method == 'XGB':
@@ -237,7 +197,8 @@ def classifyMood(X, y, id, target, nominal_idx, fs, method, random_state=1008):
         print('Getting optimized classifier using gridsearch.')
         grid = GridSearchCV(estimator=model, param_grid=param_grid,
                             cv=inner_cv, scoring='accuracy', n_jobs=2,
-                        )
+                            verbose=3
+                            )
         clf = grid.fit(X_train.values, y_train.values, groups=upsampled_groups)
         
         print('Making predictions.')
