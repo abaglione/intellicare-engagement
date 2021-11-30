@@ -3,8 +3,8 @@ import numpy as np
 
 def impute(df, id_col, imputer):
     print('Imputing missing data.')
-     
-    df_imp = imputer.fit_transform(df)
+    
+    df_imp = imputer.transform(df)
     index = df.index
     cols = df.columns
     df = pd.DataFrame(np.round(df_imp), index=index, columns = cols)
