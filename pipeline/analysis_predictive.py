@@ -27,7 +27,7 @@ import shap
 import pickle
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+from sklearn.model_selection import GridSearchCV, LeaveOneGroupOut, StratifiedGroupKFold
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
@@ -146,13 +146,12 @@ def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5):
 
 def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=1008):
     # Set up outer CV
-    outer_cv = StratifiedGroupKFold(n_splits=4, shuffle=True, random_state=random_state)
+    outer_cv = LeaveOneGroupOut()
     inner_cv = StratifiedGroupKFold(n_splits=4, shuffle=True, random_state=random_state+1)
     
     test_res_all = []
     shap_values_all = list() 
     test_indices_all = list()
-    
     
     # Do prediction task
     for train_index, test_index in outer_cv.split(X=X, y=y, groups=X[id_col]):
