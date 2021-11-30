@@ -33,6 +33,7 @@ from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 
 from . import transform
+from . import metrics
 
 # --------- Display Options ------------
 small_size = 8
@@ -56,57 +57,6 @@ pd.set_option('display.max_columns', 50)
 #https://imbalanced-learn.readthedocs.io/en/stable/generated/imblearn.over_sampling.SMOTE.html
 
 # --------- Functions ------------
-def get_performance_metrics(df, actual='actual', pred='pred'):
-    stats = {}
-
-    stats['accuracy'] = accuracy_score(y_true=df[actual], y_pred=df[pred])
-    
-    precision, recall, f1_score, support = precision_recall_fscore_support(
-        y_true=df[actual], y_pred=df[pred], average='macro'
-    )
-    
-    stats.update({'precision': precision, 'recall': recall, 
-                  'f1_score': f1_score, 'support': support
-                 })
-
-    return stats
-
-def calc_shap(X_train, X_test, model, method):
-    shap_values = None
-    
-    if method == 'LogisticR':
-        shap_values = shap.LinearExplainer(model, X_train).shap_values(X_test)
-    elif method == 'RF' or method == 'XGB':
-        shap_values = shap.TreeExplainer(model).shap_values(X_test)
-    elif method == 'SVM':
-        X_train_sampled = shap.sample(X_train, 5)
-        shap_values = shap.KernelExplainer(model.predict_proba, X_train_sampled).shap_values(X_test)
-
-    return shap_values
-
-def gather_shap(X, method, shap_values, test_indices):
-    print('Gathering SHAP stats.')
-
-    # https://lucasramos-34338.medium.com/visualizing-variable-importance-using-shap-and-cross-validation-bd5075e9063a
-
-    # Combine results from all iterations
-    test_indices_all = test_indices[0]
-    shap_values_all = np.array(shap_values[0])
-
-    for i in range(1, len(test_indices)):
-        test_indices_all = np.concatenate((test_indices_all, test_indices[i]), axis=0)
-        
-        if method == 'RF' or method == 'SVM': # classifiers with multiple outputs
-            shap_values_all = np.concatenate(
-                (shap_values_all, np.array(shap_values[i])), axis=1)
-        else:
-            shap_values_all = np.concatenate((shap_values_all, shap_values[i]), axis=0)
-
-    # Bring back variable names
-    X_test = pd.DataFrame(X.iloc[test_indices_all], columns=X.columns)
-
-    return X_test, shap_values_all
-
 def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5, random_state=1008):
 
     # Drop rows where target is NaN - should never impute these!
@@ -155,9 +105,9 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
     test_indices_all = list()
     
     # Do prediction task
-    for train_index, test_index in outer_cv.split(X=X, y=y, groups=X[id_col]):
-        X_train, y_train = X.loc[train_index, :], y[train_index]
-        X_test, y_test = X.loc[test_index, :], y[test_index]
+    for train_indices, test_indices in outer_cv.split(X=X, y=y, groups=X[id_col]):
+        X_train, y_train = X.loc[train_indices, :], y[train_indices]
+        X_test, y_test = X.loc[test_indices, :], y[test_indices]
 
         # Do imputation
         imputer = IterativeImputer(random_state=5)
@@ -207,16 +157,32 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
         test_res_all.append(pd.DataFrame({'pred': pred, 'actual': y_test}))
 
         print('Calculating feature importance for this fold.')
-        shap_values = calc_shap(X_train=X_train, X_test=X_test,
-                                model=clf.best_estimator_, method=method)
+        shap_values = metrics.calc_shap(X_train=X_train, X_test=X_test,
+                                        model=clf.best_estimator_, method=method)
 
         shap_values_all.append(shap_values)
-        test_indices_all.append(test_index)
+        test_indices_all.append(test_indices)
 
+    # Get a and save main results
     all_res = pd.concat(test_res_all, copy=True)
-    all_res = get_performance_metrics(all_res)
+    all_res = metrics.get_performance_metrics(all_res)
     
     all_res.update({'method': method, 'target': target, 'feature_set': fs, 
                     'n_observations': X.shape[0], 'n_feats': X.shape[1]})
 
     pd.DataFrame([all_res]).to_csv('results/pred_res.csv', mode='a', index=False)
+
+    ''' Don't forget to drop the groups (id) col.
+        Otherwise, we'll have issues with alignment.'''
+    X_test, shap_values = metrics.gather_shap(
+        X=X.drop(columns=[id_col]), method=method, 
+        shap_values=shap_values, test_indices=test_indices)
+
+    filename = '%s_%s_tuned.ob'.format(fs, method)
+    
+    with open('feature_importance/X_test_' + filename, 'wb') as fp:
+        pickle.dump(X_test, fp)
+
+    with open('feature_importance/shap_' + filename, 'wb') as fp:
+        pickle.dump(shap_values, fp)
+        
