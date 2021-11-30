@@ -107,14 +107,14 @@ def gather_shap(X, method, shap_values, test_indices):
 
     return X_test, shap_values_all
 
-def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5):
-    
+def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5, random_state=1008):
+
     # Drop rows where target is NaN - should never impute these!
     df.dropna(subset=[outvar], how='any', inplace=True)
 
     # Do imputation  
     print('Imputing missing vars')
-    imputer = IterativeImputer(max_iter=50, random_state=1008)
+    imputer = IterativeImputer(max_iter=50, random_state=random_state)
     df_imp = imputer.fit_transform(df)
     index = df.index
     cols = df.columns
@@ -122,6 +122,7 @@ def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5):
     
     #add the intercept columns for the linear mixed model
     df['intercept'] = 1
+    np.random.seed(random_state)
 
     print('Fitting Mixed Linear Model.')
     mixedmodel = MixedLM(endog=df[outvar].astype(float), exog=df[expfeats].astype(
