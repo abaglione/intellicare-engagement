@@ -158,7 +158,7 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
     for train_index, test_index in outer_cv.split(X=X, y=y, groups=X[id_col]):
         X_train, y_train = X.loc[train_index, :], y[train_index]
         X_test, y_test = X.loc[test_index, :], y[test_index]
-        
+
         # Do imputation
         imputer = IterativeImputer(random_state=5)
         X_train = transform.impute(X_train, id_col, imputer)
@@ -190,7 +190,7 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
             param_grid = {
                 'n_estimators': [50, 100, 200, 500],
                 'max_depth': [1, 2, 5, 10],
-                'max_features': [6, 8, 10],
+                'max_features': [3, 5, 8],
             }
             model = RandomForestClassifier(oob_score=True, random_state=random_state)
         
