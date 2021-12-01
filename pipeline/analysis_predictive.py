@@ -165,7 +165,7 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
 
     # Get a and save main results
     all_res = pd.concat(test_res_all, copy=True)
-    all_res = metrics.get_performance_metrics(all_res)
+    all_res = metrics.calc_performance_metrics(all_res)
     
     all_res.update({'method': method, 'target': target, 'feature_set': fs, 
                     'n_observations': X.shape[0], 'n_feats': X.shape[1]})
@@ -176,7 +176,7 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
         Otherwise, we'll have issues with alignment.'''
     X_test, shap_values = metrics.gather_shap(
         X=X.drop(columns=[id_col]), method=method, 
-        shap_values=shap_values, test_indices=test_indices)
+        shap_values=shap_values_all, test_indices=test_indices_all)
 
     filename = '%s_%s_tuned.ob'.format(fs, method)
     
