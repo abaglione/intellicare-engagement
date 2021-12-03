@@ -130,17 +130,17 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
         # Do gridsearch
         if method == 'XGB':
             param_grid = {
-                'n_estimators': [50, 100, 200, 500],
-                'max_depth': [3, 6, 9],
-                'min_child_weight': [1, 3, 6],
-                'learning_rate': [0.05, 0.1, 0.3, 0.5]
+                'n_estimators': [5, 10],
+                'max_depth': [1, 2, 3],
+                'min_child_weight': [1, 3],
+                'learning_rate': [0.05, 0.1, 0.3]
             }
             model = xgboost.XGBClassifier(random_state=random_state)
 
         elif method == 'RF':
             param_grid = {
-                'n_estimators': [50, 100, 200, 500],
-                'max_depth': [1, 2, 5, 10],
+                'n_estimators': [5, 10],
+                'max_depth': [1, 2, 3],
                 'max_features': [3, 5, 8],
             }
             model = RandomForestClassifier(oob_score=True, random_state=random_state)
