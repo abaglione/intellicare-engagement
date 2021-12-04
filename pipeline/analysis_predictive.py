@@ -100,6 +100,7 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
     outer_cv = LeaveOneGroupOut()
     inner_cv = StratifiedGroupKFold(n_splits=4, shuffle=True, random_state=random_state+1)
     
+    train_res_all = []
     test_res_all = []
     shap_values_all = list() 
     test_indices_all = list()
@@ -130,18 +131,19 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
         # Do gridsearch
         if method == 'XGB':
             param_grid = {
-                'n_estimators': [50, 100, 200, 500],
-                'max_depth': [3, 6, 9],
-                'min_child_weight': [1, 3, 6],
-                'learning_rate': [0.05, 0.1, 0.3, 0.5]
+                'n_estimators': [1, 2, 3, 4],
+                'max_depth': [1, 2, 3],
+                'min_child_weight': [1, 3],
+                'colsample_bytree': [0.5],
+                'learning_rate': [0.05, 0.1, 0.3]
             }
             model = xgboost.XGBClassifier(random_state=random_state)
 
         elif method == 'RF':
             param_grid = {
-                'n_estimators': [50, 100, 200, 500],
-                'max_depth': [1, 2, 5, 10],
-                'max_features': [3, 5, 8],
+                'n_estimators': [1, 2, 3, 4],
+                'max_depth': [1, 2, 3],
+                'max_features': [0.5],
             }
             model = RandomForestClassifier(oob_score=True, random_state=random_state)
         
@@ -153,8 +155,10 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
         clf = grid.fit(X_train.values, y_train.values, groups=upsampled_groups)
         
         print('Making predictions.')
-        pred = clf.predict(X_test.values)
-        test_res_all.append(pd.DataFrame({'pred': pred, 'actual': y_test}))
+        train_pred = clf.predict(X_train.values)
+        test_pred = clf.predict(X_test.values)
+        train_res_all.append(pd.DataFrame({'pred': train_pred, 'actual': y_train}))
+        test_res_all.append(pd.DataFrame({'pred': test_pred, 'actual': y_test}))
 
         print('Calculating feature importance for this fold.')
         shap_values = metrics.calc_shap(X_train=X_train, X_test=X_test,
@@ -163,9 +167,15 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
         shap_values_all.append(shap_values)
         test_indices_all.append(test_indices)
 
-    # Get a and save main results
-    all_res = pd.concat(test_res_all, copy=True)
-    all_res = metrics.calc_performance_metrics(all_res)
+    # Get train and test results as separate dictionaries
+    train_perf_metrics = metrics.calc_performance_metrics(pd.concat(train_res_all, copy=True))
+    test_perf_metrics = metrics.calc_performance_metrics(pd.concat(test_res_all, copy=True))
+
+    # Save the train accuracy alongside all test metrics - this will help us check for overfitting
+    all_res = {
+        **{'train_accuracy': train_perf_metrics['accuracy']},
+        **{'test_' + str(k): v for k, v in test_perf_metrics.items()}
+    }
     
     all_res.update({'method': method, 'target': target, 'feature_set': fs, 
                     'n_observations': X.shape[0], 'n_feats': X.shape[1]})
