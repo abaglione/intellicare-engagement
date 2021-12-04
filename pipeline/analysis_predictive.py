@@ -26,6 +26,7 @@ import xgboost
 import shap
 import pickle
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV, LeaveOneGroupOut, StratifiedGroupKFold
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
@@ -129,21 +130,28 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
         y_test = pd.Series(y_test)
 
         # Do gridsearch
+        if method == 'LogisticR':
+            param_grid = {
+                'C': np.logspace(-4, 4, 20),
+                'penalty': ['l1'],  # Use LASSO for feature selection
+                'solver': ['liblinear']
+            }
+            model = LogisticRegression(random_state=random_state)
+
         if method == 'XGB':
             param_grid = {
-                'n_estimators': [1, 2, 3, 4],
-                'max_depth': [1, 2, 3],
+                'n_estimators': [1, 2],
+                'max_depth': [1, 2],
                 'min_child_weight': [1, 3],
-                'colsample_bytree': [0.5],
                 'learning_rate': [0.05, 0.1, 0.3]
             }
             model = xgboost.XGBClassifier(random_state=random_state)
 
         elif method == 'RF':
             param_grid = {
-                'n_estimators': [1, 2, 3, 4],
-                'max_depth': [1, 2, 3],
-                'max_features': [0.5],
+                'n_estimators': [1, 2],
+                'max_depth': [1, 2],
+                'max_features': [3, 4, 5, 6, 7, 8]
             }
             model = RandomForestClassifier(oob_score=True, random_state=random_state)
         
