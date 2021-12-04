@@ -178,7 +178,7 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
         X=X.drop(columns=[id_col]), method=method, 
         shap_values=shap_values_all, test_indices=test_indices_all)
 
-    filename = '%s_%s_tuned.ob'.format(fs, method)
+    filename = fs + '_' + method + 'tuned.ob'
     
     with open('feature_importance/X_test_' + filename, 'wb') as fp:
         pickle.dump(X_test, fp)

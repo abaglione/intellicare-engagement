@@ -53,6 +53,7 @@ import matplotlib.pyplot as plt
 plt.rcParams.update({'figure.autolayout': True})
 plt.rcParams.update({'figure.facecolor': [1.0, 1.0, 1.0, 1.0]})
 
+
 # In[ ]:
 
 
@@ -181,28 +182,26 @@ for i in range(all_feats.shape[0]):
     # Find the most used apps - retain only the first one
     df2 = df[mua_dummies]
     most_used_app_cols = list(df2.columns[(df2 == 1).any(axis=0)])
-    most_used_apps = [col.replace(MUA_PREFIX, '') for col in most_used_app_cols]
-    
-    for mua in most_used_apps:
-        
-        '''Eliminate individual app columns that aren't for the most used app
-           However, retain the "most_used_app" dummitized columns! ''' 
-        df2 = df.drop(columns = [col for col in survey_app_mua_feats.columns 
-                                 if mua not in col
-                                 and MUA_PREFIX not in col
-                                 and any([app in col for app in APPS])])
+    mua = [col.replace(MUA_PREFIX, '') for col in most_used_app_cols][0]
+     
+    '''Eliminate individual app columns that aren't for the most used app
+       However, retain the "most_used_app" dummitized columns! ''' 
+    df2 = df.drop(columns = [col for col in survey_app_mua_feats.columns 
+                             if mua not in col
+                             and MUA_PREFIX not in col
+                             and any([app in col for app in APPS])])
 
-        ''' Remove the name of the most used app from all columns EXCEPT
-            the dummitized "most_used_app" columns. This enables a clean pd.concat later on.'''
-        df2.rename(mapper=lambda x: x.replace('_' + mua, '') if MUA_PREFIX not in x else x,
-                   axis=1, inplace=True)
+    ''' Remove the name of the most used app from all columns EXCEPT
+        the dummitized "most_used_app" columns. This enables a clean pd.concat later on.'''
+    df2.rename(mapper=lambda x: x.replace('_' + mua, '') if MUA_PREFIX not in x else x,
+               axis=1, inplace=True)
 
-        ''' Finally, set all other dummitized "most_used_app" columns to 0, since we are 
-            creating separate dfs for each "most used app"
-        '''
-        mua_dummies_subset = list(set(mua_dummies) - set([MUA_PREFIX + mua]))
-        df2[mua_dummies_subset] = 0
-        mua_dfs.append(df2)
+    ''' Finally, set all other dummitized "most_used_app" columns to 0, since we are 
+        creating separate dfs for each "most used app"
+    '''
+    mua_dummies_subset = list(set(mua_dummies) - set([MUA_PREFIX + mua]))
+    df2[mua_dummies_subset] = 0
+    mua_dfs.append(df2)
 
 # Replace the temp dataframe with a concat of all the individual row dfs
 # This is our final df
@@ -222,24 +221,9 @@ app_overall_fs_cols
 # In[ ]:
 
 
-# Create dictionary of featuresets
-featuresets = {
-    'app_overall_fs': app_overall_fs_cols,
-    'app_mua_fs': app_mua_fs_cols,
-    'survey_app_overall_fs': survey_fs_cols+app_overall_fs_cols, 
-    'survey_app_mua_fs': survey_fs_cols+app_mua_fs_cols
-}
-
-
-# In[ ]:
-
-
-# In[ ]:
-
-
 # Create updated dictionary of featuresets
 featuresets = {
-    'survey_app_overall_fs': survey_fs_cols+app_overall_fs_cols, 
+    'survey_app_overall_fs': survey_fs_cols+app_overall_fs_cols,
     'survey_app_ind_fs': survey_fs_cols+app_ind_fs_cols,
     'survey_app_mua_fs': survey_fs_cols+app_mua_fs_cols
 }
@@ -262,16 +246,17 @@ for fs_name, fs_cols in featuresets.items():
         else:
             # Handle special cases in which we want data only from the most used app
             df = survey_app_mua_feats
+            mua_onehots=[]
 
         for target_name, target_col in targets.items():  
             
             # Drop rows where target is NaN - should never impute these!
             df2 = df.dropna(subset=[target_col], how='any')
-            
             X = df2[[ID_COL, TIMEDIV_COL] + fs_cols + mua_onehots]
             
             # Ensure not including any duplicate columns
             X = X.loc[:,~X.columns.duplicated()]
+            print(X)
             y = df2[target_col]
 
             ''' If this is a featureset with app features 
