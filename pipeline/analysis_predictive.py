@@ -95,12 +95,48 @@ def genMixedLM(df, outvar, expfeats, gpvar, fsLabel, alpha=0.5, random_state=100
     rdf['rmse'] = rmse
 
     return(rdf)
+def tune_hyperparams(X, y, groups, method, random_state):
+    cv = StratifiedGroupKFold(n_splits=4, shuffle=True, random_state=random_state+1)
 
-def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=1008):
+    # Do gridsearch
+    if method == 'LogisticR':
+        param_grid = {
+            'C': np.logspace(-4, 4, 20),
+            'penalty': ['l1'],  # Use LASSO for feature selection
+            'solver': ['liblinear']
+        }
+        model = LogisticRegression(random_state=random_state)
+
+    if method == 'XGB':
+        param_grid = {
+            'n_estimators': [1, 2, 3],
+            'max_depth': [1, 2],
+            'min_child_weight': [1, 3],
+            'learning_rate': [0.05, 0.1, 0.3]
+        }
+        model = xgboost.XGBClassifier(random_state=random_state)
+
+    elif method == 'RF':
+        param_grid = {
+            'n_estimators': [1, 2, 3],
+            'max_depth': [1, 2],
+            'max_features': [4, 5, 6, 7, 8]
+        }
+        model = RandomForestClassifier(oob_score=True, random_state=random_state)
+    
+    print('Getting optimized classifier using gridsearch.')
+    grid = GridSearchCV(estimator=model, param_grid=param_grid,
+                        cv=cv, scoring='accuracy', n_jobs=3,
+                        verbose=3
+                        )
+    clf = grid.fit(X.values, y.values, groups=groups)
+    return clf
+    
+def classifyMood(X, y, id_col, target, nominal_idx, fs, method, 
+                 optimize=False, random_state=1008):
     # Set up outer CV
     outer_cv = LeaveOneGroupOut()
-    inner_cv = StratifiedGroupKFold(n_splits=4, shuffle=True, random_state=random_state+1)
-    
+
     train_res_all = []
     test_res_all = []
     shap_values_all = list() 
@@ -129,40 +165,17 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
         y_train = pd.Series(y_train)
         y_test = pd.Series(y_test)
 
-        # Do gridsearch
-        if method == 'LogisticR':
-            param_grid = {
-                'C': np.logspace(-4, 4, 20),
-                'penalty': ['l1'],  # Use LASSO for feature selection
-                'solver': ['liblinear']
-            }
-            model = LogisticRegression(random_state=random_state)
-
-        if method == 'XGB':
-            param_grid = {
-                'n_estimators': [1, 2],
-                'max_depth': [1, 2],
-                'min_child_weight': [1, 3],
-                'learning_rate': [0.05, 0.1, 0.3]
-            }
-            model = xgboost.XGBClassifier(random_state=random_state)
-
-        elif method == 'RF':
-            param_grid = {
-                'n_estimators': [1, 2],
-                'max_depth': [1, 2],
-                'max_features': [3, 4, 5, 6, 7, 8]
-            }
-            model = RandomForestClassifier(oob_score=True, random_state=random_state)
-        
-        print('Getting optimized classifier using gridsearch.')
-        grid = GridSearchCV(estimator=model, param_grid=param_grid,
-                            cv=inner_cv, scoring='accuracy', n_jobs=3,
-                            verbose=3
-                            )
-        clf = grid.fit(X_train.values, y_train.values, groups=upsampled_groups)
-        
         print('Making predictions.')
+        if optimize:
+            clf = tune_hyperparams(X=X_train, y=y_train, groups=upsampled_groups, method=method, random_state=random_state)
+        else:
+            if method == 'LogisticR':
+                clf = LogisticRegression(solver='liblinear', random_state=random_state)
+            elif method == 'RF':
+                clf = RandomForestClassifier(max_depth=1, random_state=random_state)
+            elif method == 'XGB':
+                clf = xgboost.XGBClassifier(random_state=random_state)
+
         train_pred = clf.predict(X_train.values)
         test_pred = clf.predict(X_test.values)
         train_res_all.append(pd.DataFrame({'pred': train_pred, 'actual': y_train}))
@@ -186,7 +199,8 @@ def classifyMood(X, y, id_col, target, nominal_idx, fs, method, random_state=100
     }
     
     all_res.update({'method': method, 'target': target, 'feature_set': fs, 
-                    'n_observations': X.shape[0], 'n_feats': X.shape[1]})
+                    'n_observations': X.shape[0], 'n_feats': X.shape[1],
+                    'optimized': optimize})
 
     pd.DataFrame([all_res]).to_csv('results/pred_res.csv', mode='a', index=False)
 

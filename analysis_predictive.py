@@ -221,9 +221,65 @@ app_overall_fs_cols
 # In[ ]:
 
 
+# Create dictionary of featuresets
+featuresets = {
+    'app_overall_fs': app_overall_fs_cols,
+    'app_mua_fs': app_mua_fs_cols,
+    'survey_app_overall_fs': survey_fs_cols+app_overall_fs_cols, 
+    'survey_app_mua_fs': survey_fs_cols+app_mua_fs_cols
+}
+
+
+# In[ ]:
+
+
+######regression tasks on 1-5 scale (cut off on both 1 (floor) and 5 (ceiling)) using lasso linear mixed effect model;
+# TODO - change so not passing in whole df every time
+alpha_list = np.arange(0.1, 0.81, 0.1)
+lmm_res = []
+
+for alpha in alpha_list:
+    print('alpha: {0}'.format(alpha))
+    for fs_name, fs_cols in featuresets.items():
+        print(fs_name)
+        exp_feats = [TIMEDIV_COL, 'intercept'] + fs_cols
+        
+        ''' Handle the special case in which we need to reference the dataframe with
+        data from only the most used app(s) for each observation '''
+        if 'mua' in fs_name:
+            df = survey_app_mua_feats
+        else:
+            df = all_feats
+        
+        # Add the intercept column
+        df['intercept'] = 1
+        
+        # Save a copy in case we need to reference this later
+        df.to_csv('features/%s.csv' % fs_name)
+        
+        # Make predictions for each target
+        for target_col in ['anx', 'dep']:
+            
+            print(target_col)
+            # Subset the data so we only impute what we need
+            df2 = df[[ID_COL] + exp_feats + [target_col]].copy()
+            print(df2)
+            res = pipeline.genMixedLM(df=df2, outvar=target_col, 
+                                      expfeats=exp_feats,
+                                      gpvar=ID_COL, fsLabel=fs_name, alpha=alpha)
+            res.to_csv('results/lmm_res.csv', mode='a', index=False)
+            lmm_res.append(res)
+            
+lmm_res = pd.concat(lmm_res, copy=True, ignore_index=True, sort=False)
+lmm_res.to_csv('results/lmm_res.csv', index=False)
+
+
+# In[ ]:
+
+
 # Create updated dictionary of featuresets
 featuresets = {
-    'survey_app_overall_fs': survey_fs_cols+app_overall_fs_cols,
+    'survey_app_overall_fs': survey_fs_cols+app_overall_fs_cols, 
     'survey_app_ind_fs': survey_fs_cols+app_ind_fs_cols,
     'survey_app_mua_fs': survey_fs_cols+app_mua_fs_cols
 }
@@ -242,17 +298,15 @@ for fs_name, fs_cols in featuresets.items():
     if 'app' in fs_name:
         if 'mua' not in fs_name:
             df = all_feats
-            mua_onehots = [col for col in df.columns if MUA_PREFIX in col]
         else:
             # Handle special cases in which we want data only from the most used app
             df = survey_app_mua_feats
-            mua_onehots=[]
 
         for target_name, target_col in targets.items():  
             
             # Drop rows where target is NaN - should never impute these!
             df2 = df.dropna(subset=[target_col], how='any')
-            X = df2[[ID_COL, TIMEDIV_COL] + fs_cols + mua_onehots]
+            X = df2[[ID_COL, TIMEDIV_COL] + fs_cols]
             
             # Ensure not including any duplicate columns
             X = X.loc[:,~X.columns.duplicated()]
@@ -263,11 +317,15 @@ for fs_name, fs_cols in featuresets.items():
                 Get a list of one-hot-encoded columns from the most_used_app feature.'''
 
             # Get categorical feature indices - will be used with SMOTENC later
-            nominal_idx = sorted([X.columns.get_loc(c) for c in [ID_COL] + mua_onehots])
+            nominal_idx = [X.columns.get_loc(ID_COL)]
 
-            for method in ['RF', 'XGB']:
-                res = pipeline.classifyMood(X=X, y=y, id_col=ID_COL, target=target_name,
-                                            nominal_idx = nominal_idx, fs=fs_name, method=method)
+            for method in ['LogisticR', 'RF', 'XGB']:
+                pipeline.classifyMood(X=X, y=y, id_col=ID_COL, target=target_name,
+                                     nominal_idx = nominal_idx, fs=fs_name, method=method,
+                                     optimize=False)
+                pipeline.classifyMood(X=X, y=y, id_col=ID_COL, target=target_name,
+                                      nominal_idx = nominal_idx, fs=fs_name, method=method,
+                                      optimize=True)
 
 
 # In[ ]:
