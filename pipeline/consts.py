@@ -34,7 +34,7 @@ XLIM = [1, MAX_WEEKS]
 YLIM1 = [0, MAX_WKLY_AFFECT + 1]
 
 # Labels for subplots on graphs
-SUBPLOT_LABELS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j','k','l']
+SUBPLOT_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J','K','L']
 
 PHQ4_CODES = {
     'Not at all': 0,
