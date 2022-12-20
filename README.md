@@ -11,7 +11,7 @@ The code contained in this repository was used for all analyses for the followin
 
 This code was co-authored by Lihua Cai and Anna Baglione.
 
-Data were collected by Dr. Phil Chow and colleagues.
+Data were collected by Dr. Phil Chow and colleagues and were used with permission.
 
 This README template was adapted with permission from one of [@TylerSpears](https://github.com/TylerSpears/)' templates.
 
