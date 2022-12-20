@@ -15,8 +15,8 @@ Data were collected by Dr. Phil Chow and colleagues.
 
 This README template was adapted with permission from one of [@TylerSpears](https://github.com/TylerSpears/)' templates.
 
-# Installation
-## Required Packages
+## Installation
+### Required Packages
 This project requires the python packages:
 
 - jupyter
@@ -27,13 +27,14 @@ This project requires the python packages:
 - shap
 - ...and many others
 
-## Environment Creation
+### Environment Creation
 We recommend using anaconda (or variants such as miniconda or mamba) to create a new environment from the environment.yml file:
 
 ```
 conda env create -f environment.yml
 ```
-## pre-commit Hooks
+
+### pre-commit Hooks
 This repository relies on pre-commit to run basic cleanup and linting utilities before a commit can be made. Hooks are defined in the .pre-commit-config.yaml file. To set up pre-commit hooks:
 
 ``` 
@@ -44,7 +45,8 @@ pre-commit install
 # (Optional) run against all files
 pre-commit run --all-files
 ```
-### nbstripout Hook Description
+
+#### nbstripout Hook Description
 The nbstripout hook strips jupyter/ipython notebooks (*.ipynb files) of output and metadata. nbstripout is especially important for human subjects projects, in which keeping data (even anonymized data) out of the public cloud is necessary.
 
 This project uses nbstripout as a pre-commit hook (see https://github.com/kynan/nbstripout#using-nbstripout-as-a-pre-commit-hook), but this causes your local working version to be stripped of output.
