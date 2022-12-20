@@ -9,7 +9,7 @@ The code contained in this repository was used for all analyses for the followin
 >URL: https://medinform.jmir.org/2022/6/e30712
 >DOI: 10.2196/30712
 
-This code was co-authored by Lihua Cai and Anna Baglione.
+This code was co-authored by Dr. Lihua Cai and [Dr. Anna Baglione](https://github.com/abaglione).
 
 Data were collected by Dr. Phil Chow and colleagues and were used with permission.
 
