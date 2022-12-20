@@ -3,17 +3,17 @@
 ## Description
 The code contained in this repository was used for all analyses for the following publication:
 
-Baglione A, Cai L, Bahrini A, Posey I, Boukhechba M, Chow P
-Understanding the Relationship Between Mood Symptoms and Mobile App Engagement Among Patients With Breast Cancer Using Machine Learning: Case Study
-JMIR Med Inform 2022;10(6):e30712
-URL: https://medinform.jmir.org/2022/6/e30712
-DOI: 10.2196/30712
+>Baglione A, Cai L, Bahrini A, Posey I, Boukhechba M, Chow P
+>Understanding the Relationship Between Mood Symptoms and Mobile App Engagement Among Patients With Breast Cancer Using Machine Learning: Case Study
+>JMIR Med Inform 2022;10(6):e30712
+>URL: https://medinform.jmir.org/2022/6/e30712
+>DOI: 10.2196/30712
 
 This code was co-authored by Lihua Cai and Anna Baglione.
 
 Data were collected by Dr. Phil Chow and colleagues.
 
-This README template was adapted with permission from one of @TylerSpears' templates.
+This README template was adapted with permission from one of [@TylerSpears](https://github.com/TylerSpears/)' templates.
 
 # Installation
 ## Required Packages
