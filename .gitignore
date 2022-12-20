@@ -1,6 +1,7 @@
 # Don't upload data, features, or results
 data/
 features/
+feature_importance/
 results/
 *.csv
 
